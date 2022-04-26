@@ -13,19 +13,9 @@ function sense(simulator_state::Channel, emg::Channel, sensors, road)
 end
 
 
+
 abstract type Sensor end
 abstract type Observation end
-
-struct GPS<:Sensor
-    m_id::Int
-    noise_std::Float64
-    channel::Channel
-end
-
-struct GPSMeas <: Observation
-    position
-    time
-end
 
 struct Oracle<:Sensor
     m_id::Int
@@ -181,12 +171,6 @@ function update_sensor(sensor::Oracle, gt, ms, road)
     meas = OracleMeas(position(m), speed(m), heading(m), seg, m.target_lane, m.target_vel, front(m), rear(m), left(m), right(m), gt)
 end
 
-function update_sensor(sensor::GPS, gt, ms, road)
-    m = ms[sensor.m_id]
-    noisy_pos = position(m) + sensor.noise_std * randn(2)
-    meas = GPSMeas(position(m), gt)
-end
-
 function update_sensor(sensor::FleetOracle, gt, ms, road)
     meas = Dict{Int, OracleMeas}()
     for id ∈ sensor.m_ids
@@ -199,14 +183,33 @@ end
 
 function get_camera_meas(sensor, gt, ms, road)
     meas = Vector{BBoxMeas}()
+    meas_test = []
     for (id, m) ∈ ms
         pts = get_corners(m)
         transform!(sensor, pts...)
         if infov(pts, sensor)
             bbox = expected_bbox(sensor, pts, gt)
             push!(meas, bbox)
+
+            # my additions start
+            state = m.state
+            con = m.control
+            h_state = [state[1], state[2], state[4], m.length, m.width, m.height, state[3], con[2]]
+            # (m_test, points) = h_state_to_bbox(h_state, sensor)
+            # push!(meas_test, m_test)
+            test_J(h_state, sensor)
+            # my additions end
         end
     end
+
+    # my additions start
+    if length(meas_test) > 0
+        println("camera array sensor update")
+        println(meas)
+        println(meas_test)
+        println()
+    end
+    # my additions end
     meas
 end
 
@@ -219,6 +222,7 @@ function update_sensor(sensor::CameraArray, gt, ms, road)
     for (id, camera) ∈ sensor.cameras
         m = get_camera_meas(camera, gt, ms, road)
         meas[id] = m
+        
     end
     meas
 end
