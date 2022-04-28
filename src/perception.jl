@@ -323,7 +323,9 @@ function match_bb(bb_cf, camera_array)
             p1_br = c1_bb[3:4]
             p2_tl = c2_bb[1:2]
             p2_br = c2_bb[3:4]
-            sum_dist = euclidean_dist_sq(p1_tl, p2_tl) + euclidean_dist_sq(p1_br, p2_br)
+            p1_midpoint = midpoint(p1_tl, p1_br)
+            p2_midpoint = midpoint(p2_tl, p2_br)
+            sum_dist = euclidean_dist_sq(p1_midpoint, p2_midpoint)
             dist_matrix[i, j] = sum_dist
         end
         # findmin gives (value, index) of min element; index is corresponding bb match
@@ -341,7 +343,9 @@ function match_bb(bb_cf, camera_array)
         row_match = min_row[i][2]
         if min_col[row_match][2] == i 
             push!(matches, [i, row_match])
-            push!(bb_final, [c1_bb_global[i] c2_bb_global[row_match]])
+            c1_bb = bb_cf[1][i]
+            c2_bb = bb_cf[2][row_match]
+            push!(bb_final, [c1_bb c2_bb])
         end
     end
 
@@ -379,4 +383,9 @@ end
 # returns the square of euclidean distance between 2 points
 function euclidean_dist_sq(p1, p2)
     return (p1[1]-p2[1])^2 + (p1[2]-p2[2])^2
+end
+
+# returns the center between 2 points
+function midpoint(p1, p2)
+    return [(p1[1]+p2[1])/2 (p1[2]+p2[2])/2]
 end
