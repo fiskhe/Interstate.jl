@@ -44,6 +44,58 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     end
 end
 
+# initialize values for first iteration of Kalman filter
+function kalman_init(bb_c1, c1; loop_radius=50.0)
+    # c1=camera_array[1]
+    f = c1.focal_len
+    R = c1.R
+    t = c1.t
+    sx = c1.sx
+    sy = c1.sy
+    camera_pos = SVector{3,Float64}(5.0/6*loop_radius, loop_radius, 20.0)
+    lookat = SVector{3,Float64}(0, 0, 0)
+
+
+    #bb_c1 = bb_sense[1]
+    obj_estimates = [] # global frame 3d points representing center of each bb in c1
+
+    for bbox in bb_c1
+        println(bbox)
+        println()
+        tl = [bbox.left bbox.top]
+        br = [bbox.right bbox.bottom]
+        center_pix = midpoint(tl, br)
+        center_cf = zeros(Float64, 3,)
+        center_cf[3] = euclidean_dist(camera_pos, lookat)
+        center_cf[1] = center_pix[1] * (sx/f) * center_cf[3]
+        center_cf[2] = center_pix[2] * (sy/f) * center_cf[3]
+        println(center_cf)
+        println()
+        println(t)
+        println()
+
+        center_gf = inv(R)*(center_cf - t)
+        println(center_gf)
+        println()
+        x = center_gf[1]
+        y = center_gf[2]
+        extra_size = rand()
+        w = 1.5 + 2.0 * extra_size
+        l = 3.0 + 6.0 * extra_size
+        h = 2.0 + 1.0 * extra_size
+        v = 5.0 + rand()*5.0
+        θ = rand() * 2.0 * pi - pi
+        angular_vel = v / loop_radius
+        push!(obj_estimates, [x y θ l w h v angular_vel])
+    end
+
+    println(obj_estimates)
+    println()
+    println()
+
+    obj_estimates
+end
+
 function match_bb(bb_cf, camera_array)
     # transform input bb in global frame
     # match by euclidean distance, output stacked Zk
@@ -141,8 +193,8 @@ function camera_to_global(camera, bb_cf)
 end
 
 # returns the square of euclidean distance between 2 points
-function euclidean_dist_sq(p1, p2)
-    return (p1[1]-p2[1])^2 + (p1[2]-p2[2])^2
+function euclidean_dist(p1, p2)
+    return sqrt((p1[1]-p2[1])^2 + (p1[2]-p2[2])^2 + (p1[3]-p2[3])^2)
 end
 
 # returns the center between 2 points
