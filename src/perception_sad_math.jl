@@ -22,7 +22,6 @@ function h_state_to_bbox(full_state, camera)
     A = [cos(θ)/2  -sin(θ)/2 0
          sin(θ)/2  cos(θ)/2 0
          0         0        1]
-    # question: shouldnt the 2nd row sin be negative according ot notes???
 
     lwh = [l, w, h]
     pos = [x, y, 0]
@@ -31,7 +30,6 @@ function h_state_to_bbox(full_state, camera)
     for i in [1, -1]
         for j in [1, -1]
             for k in [0, 1]
-                # rf_cam = R*(pos + A*Diagonal([i,j, k])*lwh) + t
                 lwh_config = [i, j, k]
                 # include as a tuple the corner and also a label for which corner it is
                 push!(points, (R*(pos + A*Diagonal(lwh_config)*lwh) + t, lwh_config))
@@ -44,7 +42,6 @@ function h_state_to_bbox(full_state, camera)
     counter = 1
     # look at expected_bbox in sensors.jl, line 117
     for (rf_cam,) in points
-        # px = max(min(camera.focal_len * pt[1] / (pt[3] * camera.sx), 1.0), -1.0)
         cam_x = max(min(f*rf_cam[1]/(rf_cam[3]*camera.sx), 1.0), -1.0)
         cam_y = max(min(f*rf_cam[2]/(rf_cam[3]*camera.sy), 1.0), -1.0)
 
@@ -66,17 +63,17 @@ function h_state_to_bbox(full_state, camera)
         end
 
         # for the jacobian, set pt index to invalid number so we know j is zero
-        if cam_x == 1.0
-            right_pt = 0
-        elseif cam_x == -1.0
-            left_pt = 0
-        end
-
-        if cam_y == 1.0
-            bottom_pt = 0
-        elseif cam_x == -1.0
-            top_pt = 0
-        end
+        # if cam_x == 1.0
+        #     right_pt = 0
+        # elseif cam_x == -1.0
+        #     left_pt = 0
+        # end
+        #
+        # if cam_y == 1.0
+        #     bottom_pt = 0
+        # elseif cam_x == -1.0
+        #     top_pt = 0
+        # end
         counter += 1
     end
 
@@ -111,6 +108,25 @@ function test_J(full_state, camera)
     println()
     println()
     println()
+
+    println("For the dyunamics alasdfd")
+    next_x = obj_state_forecast(full_state, 0.001)
+    J_dyn = J_dynamics_forecast(full_state, 0.001)
+    for i in 1:8
+        s = copy(full_state)
+        s[i] += d
+        next_x_ = obj_state_forecast(s, 0.001)
+        # println(next_x_)
+        # println(next_x)
+        println(next_x_ - next_x)
+        num_jacob = (next_x_ - next_x) ./ d
+        
+        println("numerical: ")
+        println(num_jacob)
+        println("my calculated:")
+        println(J_dyn[:,i])
+        println()
+    end
 end
 
 function h_jacobian_deconstr(bbox_i, points, camera, full_state)
@@ -119,7 +135,8 @@ function h_jacobian_deconstr(bbox_i, points, camera, full_state)
     sy = camera.sy
     jacobian = zeros(4, 8)
     for (index, i) in enumerate(bbox_i)
-        if i != 0
+        if 0 == 0
+        # if i != 0
             (pt, lwh_c) = points[i]
             config = ones(8)
             config[4:6] = lwh_c
@@ -158,6 +175,7 @@ end
 function obj_state_next(obj_state, cam_meas)
     # x_k_forecast + kalman_gain * (cam_meas - h(x_k_forecast))
     x_f = obj_state_forecast(obj_state, 0.1) # what is time step
+    x_f + kalman_gain * (cam_meas - h_state_to_bbox(x_f))
 end
 
 function obj_state_forecast(obj_state, Δ)
@@ -165,25 +183,41 @@ function obj_state_forecast(obj_state, Δ)
     θ = obj_state[3]
     v = obj_state[7]
     ω = obj_state[8]
-    obj_state[1:3] +=  [Δ * cos(θ) * v, Δ * cos(θ) * v, Δ * ω]
+    obj_state[1:3] +=  [Δ * cos(θ) * v, Δ * sin(θ) * v, Δ * ω]
     return obj_state
 end
 
 function J_dynamics_forecast(obj_state, Δ)
     # jacobian of above.. should be 8x8 (dimensions of object state)
+    θ = obj_state[3]
+    v = obj_state[7]
+    J = zeros(8,8)
+    J[1, 3] = -Δ*sin(θ)*v
+    J[2, 3] = -Δ*sin(θ)*v
+    J[1, 7] = Δ*cos(θ)
+    J[2, 7] = Δ*sin(θ)
+    J[3, 8] = Δ
+    return J .+ I(8)
 end
 
-function kalman_gain(prev_state)
+function kalman_gain(prev_state, x_k_forecast)
     # p_forecast * J_h(x_k_forecast).T * (J_h(x_k_forecast) * P_f * J_h(x_k_forecast).T + noise_R)^-1
-    # p_forecast(prev_state) * 
+    J_h = h_jacobian_deconstr(x_k_forecast)
+    # p_forecast(prev_state) * J_h' * (J_h * P_f * J_h' + noise_R)^-1
+    p_forecast(prev_state) * J_h' * (J_h * P_f * J_h')^-1
 end
 
 # p is covariance
-function p_k()
+function p_k(kalman_gain, x_k_forecast, p_forecast)
     # (I - kalman_gain*J_h(x_forecast))*p_forecast
+    (I(8) - kalman_gain * h_jacobian_deconstr(x_forecast)) * p_forecast
 end
 
-function p_forecast(prev_state)
+function p_forecast(prev_state, p_prev)
     # J_dynamics(prev_state)*p_prev*J_dynamics(prev_state).T + noise_Q
+    J_prev = J_dynamics_forecast(prev_state)
+    noise_Q = randn(8, 8)
+    J_prev * p_prev * J_prev' + noise_Q
+    # J_prev * p_prev * J_prev'
 end
 
