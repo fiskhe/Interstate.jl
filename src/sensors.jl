@@ -198,10 +198,10 @@ function get_camera_meas(sensor, gt, ms, road)
             h_state = [state[1], state[2], state[4], m.length, m.width, m.height, state[3], con[2]]
             # (m_test, points) = h_state_to_bbox(h_state, sensor)
             # push!(meas_test, m_test)
-            println(bbox)
+            # println(bbox)
             println()
-            kalman_init([bbox], sensor)
-            #test_J(h_state, sensor)
+            # kalman_init([bbox], sensor)
+            test_J(h_state, sensor)
             # my additions end
         end
     end
