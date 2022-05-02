@@ -215,9 +215,9 @@ function p_k(kalman_gain, x_k_forecast, p_forecast, J_h_forecast)
     (I(8) - kalman_gain * J_h_forecast) * p_forecast
 end
 
-function p_forecast(prev_state, p_prev)
+function p_forecast(prev_state, p_prev, Δ)
     # J_dynamics(prev_state)*p_prev*J_dynamics(prev_state).T + noise_Q
-    J_prev = J_dynamics_forecast(prev_state)
+    J_prev = J_dynamics_forecast(prev_state, Δ)
     noise_Q = diagm(randn(8))
     J_prev * p_prev * J_prev' + noise_Q
     # J_prev * p_prev * J_prev'
