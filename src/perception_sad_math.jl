@@ -172,9 +172,10 @@ function h_jacobian_deconstr(bbox_i, points, camera, full_state)
     jacobian
 end
 
-function obj_state_next(x_k_forecast, kalman_gain, cam_meas)
+function obj_state_next(x_k_forecast, kalman_gain, cam_meas, bb_forecast)
+    (c1, c2) = cams
     # x_k_forecast + kalman_gain * (cam_meas - h(x_k_forecast))
-    x_k_forecast + kalman_gain * (cam_meas - h_state_to_bbox(x_k_forecast))
+    x_k_forecast + kalman_gain * (cam_meas - bb_forecast)
 end
 
 function obj_state_forecast(obj_state, Δ)
@@ -200,9 +201,8 @@ function J_dynamics_forecast(obj_state, Δ)
     return J .+ I(8)
 end
 
-function kalman_gain(P_k_forecast, x_k_forecast)
+function kalman_gain(P_k_forecast, x_k_forecast, J_h)
     # p_forecast * J_h(x_k_forecast).T * (J_h(x_k_forecast) * P_f * J_h(x_k_forecast).T + noise_R)^-1
-    J_h = h_jacobian_deconstr(x_k_forecast)
     # p_forecast(prev_state) * J_h' * (J_h * P_f * J_h' + noise_R)^-1
     noise = [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001,]
     noise_R = diagm(noise)
@@ -210,9 +210,9 @@ function kalman_gain(P_k_forecast, x_k_forecast)
 end
 
 # p is covariance
-function p_k(kalman_gain, x_k_forecast, p_forecast)
+function p_k(kalman_gain, x_k_forecast, p_forecast, J_h_forecast)
     # (I - kalman_gain*J_h(x_forecast))*p_forecast
-    (I(8) - kalman_gain * h_jacobian_deconstr(x_forecast)) * p_forecast
+    (I(8) - kalman_gain * J_h_forecast) * p_forecast
 end
 
 function p_forecast(prev_state, p_prev)

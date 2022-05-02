@@ -76,13 +76,16 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
 
         # println(kalman_states)
 
+        c1_meas = copy(meas[1])
+        c2_meas = copy(meas[2])
+
         for state in kalman_states
             c1_match = match_bb_to_track(state, c1_meas, c1)
             c2_match = match_bb_to_track(state, c2_meas, c2)
             state.meas = cat(c1_meas[c1_match][1:4], c2_meas[c2_match][1:4])
             delete!(c1_meas, c1_match)
             delete!(c2_meas, c2_match)
-            kalman_filter(state)
+            kalman_filter(state, camera_array)
         end
 
         # add new tracks for leftover bounding boxes in camera1
@@ -96,16 +99,28 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     end
 end
 
-function kalman_filter(prev_kalman_state)
+function kalman_filter(prev_kalman_state, cams)
    
     x_prev = prev_kalman_state.x_k
     P_prev = prev_kalman_state.P_k
 
     x_k_forecast = obj_state_forecast(x_prev, 0.1) # 0.1 time step for now
+
+    (c1, c2) = cams
+    (bb1, bbox_i1, points1) = h_state_to_bbox(x_k_forecast, c1)
+    (bb2, bbox_i2, points2) = h_state_to_bbox(x_k_forecast, c2)
+    bb_forecast = vcat(bb1, bb2)
+
+    J_h1= h_jacobian_deconstr(bbox_i1, points1, c1, full_state)
+    J_h2= h_jacobian_deconstr(bbox_i2, points2, c2, full_state)
+    J_h = vcat(J_h1, J_h2)
+
     P_k_forecast = p_forecast(x_prev, P_prev)
-    Kalman = kalman_gain(P_k_forecast, x_k_forecast)
-    P_k = p_k(Kalman, x_k_forecast, P_k_forecast)
-    x_k = obj_state_next(x_k_forecast, kalman, prev_kalman_state.meas)
+    Kalman = kalman_gain(P_k_forecast, x_k_forecast, J_h)
+    P_k = p_k(Kalman, x_k_forecast, P_k_forecast, J_h)
+    x_k = obj_state_next(x_k_forecast, kalman, prev_kalman_state.meas, bb_forecast)
+
+    # TODO: get the time step right
 
     # TODO: check if this actually works!!!!!
     prev_kalman_state.x_k = x_k
