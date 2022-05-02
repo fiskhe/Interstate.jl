@@ -21,7 +21,7 @@ struct ExtendedObjectState
 end
 
 struct KalmanState
-    x_k::ExtendedObjectState
+    x_k::Vector{Float64}
     P_k::Matrix{Float64}
     meas::Vector{Float64}
 end
@@ -53,15 +53,27 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     # kalman filter initialization
     c1 = camera_array[1]
     c2 = camera_array[2]
-    kalman_states = kalman_init(SENSE[1], c1)
 
+    first = false
     while true
         sleep(0)
         @return_if_told(EMG)
         meas = @fetch_or_continue(SENSE)
+        if length(meas[1]) == 0 && length(meas[2]) == 0
+            continue
+        end
 
-        c1_meas = SENSE[1]
-        c2_meas = SENSE[2]
+        println(meas)
+
+        if !first
+            kalman_states = kalman_init(meas[1], c1)
+            first = true
+        end
+
+        # println(kalman_states)
+
+        c1_meas = meas[1]
+        c2_meas = meas[2]
 
         for state in kalman_states
             c1_match = match_bb_to_track(state, c1_meas, camera_array[1])
@@ -130,11 +142,12 @@ function kalman_init(bb_c1, c1; loop_radius=50.0)
         v = 5.0 + rand()*5.0
         θ = rand() * 2.0 * pi - pi
         angular_vel = v / loop_radius
-        x_0 = ExtendedObjectState(x, y, θ, l, w, h, v, angular_vel)
+        x_0 = [x, y, θ, l, w, h, v, angular_vel]
+        # x_0 = ExtendedObjectState(x, y, θ, l, w, h, v, angular_vel)
         variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
         P_0 = diagm(variances)
 
-        curr_state = KalmanState(x_0, P_0, [bbox.left bbox.top bbox.right bbox.bottom])
+        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom])
         push!(kalman_states, curr_state)
     end
 
