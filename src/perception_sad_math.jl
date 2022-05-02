@@ -63,17 +63,17 @@ function h_state_to_bbox(full_state, camera)
         end
 
         # for the jacobian, set pt index to invalid number so we know j is zero
-        # if cam_x == 1.0
-        #     right_pt = 0
-        # elseif cam_x == -1.0
-        #     left_pt = 0
-        # end
-        #
-        # if cam_y == 1.0
-        #     bottom_pt = 0
-        # elseif cam_x == -1.0
-        #     top_pt = 0
-        # end
+        if cam_x == 1.0
+            right_pt = 0
+        elseif cam_x == -1.0
+            left_pt = 0
+        end
+
+        if cam_y == 1.0
+            bottom_pt = 0
+        elseif cam_x == -1.0
+            top_pt = 0
+        end
         counter += 1
     end
 
@@ -109,17 +109,15 @@ function test_J(full_state, camera)
     println()
     println()
 
+    e = 1e-4
     println("For the dyunamics alasdfd")
     next_x = obj_state_forecast(full_state, 0.001)
     J_dyn = J_dynamics_forecast(full_state, 0.001)
     for i in 1:8
         s = copy(full_state)
-        s[i] += d
+        s[i] += e
         next_x_ = obj_state_forecast(s, 0.001)
-        # println(next_x_)
-        # println(next_x)
-        println(next_x_ - next_x)
-        num_jacob = (next_x_ - next_x) ./ d
+        num_jacob = (next_x_ - next_x) ./ e
         
         println("numerical: ")
         println(num_jacob)
@@ -135,8 +133,8 @@ function h_jacobian_deconstr(bbox_i, points, camera, full_state)
     sy = camera.sy
     jacobian = zeros(4, 8)
     for (index, i) in enumerate(bbox_i)
-        if 0 == 0
-        # if i != 0
+        # if 0 == 0
+        if i != 0
             (pt, lwh_c) = points[i]
             config = ones(8)
             config[4:6] = lwh_c
@@ -157,8 +155,10 @@ function h_jacobian_deconstr(bbox_i, points, camera, full_state)
             dtrans_dx = [1, 0, 0]
             dtrans_dy = [0, 1, 0]
             dtrans_dth = [-l*sin(th)/2-w*cos(th)/2, l*cos(th)/2-w*sin(th)/2, 0]
-            dtrans_dl = [cos(th)/2, sin(th)/2, 0]
-            dtrans_dw = [-sin(th)/2, cos(th)/2, 0]
+            dtrans_dl = [-cos(th)/2, -sin(th)/2, 0]
+            # dtrans_dl = [cos(th)/2, sin(th)/2, 0]
+            dtrans_dw = [sin(th)/2, -cos(th)/2, 0]
+            # dtrans_dw = [-sin(th)/2, cos(th)/2, 0]
             dtrans_dh = [0, 0, 1]
             if h == 0
                 dtrans_dh[3] = 0
@@ -183,8 +183,9 @@ function obj_state_forecast(obj_state, Δ)
     θ = obj_state[3]
     v = obj_state[7]
     ω = obj_state[8]
-    obj_state[1:3] +=  [Δ * cos(θ) * v, Δ * sin(θ) * v, Δ * ω]
-    return obj_state
+    x = copy(obj_state)
+    x[1:3] +=  [Δ * cos(θ) * v, Δ * sin(θ) * v, Δ * ω]
+    return x
 end
 
 function J_dynamics_forecast(obj_state, Δ)
@@ -193,7 +194,7 @@ function J_dynamics_forecast(obj_state, Δ)
     v = obj_state[7]
     J = zeros(8,8)
     J[1, 3] = -Δ*sin(θ)*v
-    J[2, 3] = -Δ*sin(θ)*v
+    J[2, 3] = Δ*cos(θ)*v
     J[1, 7] = Δ*cos(θ)
     J[2, 7] = Δ*sin(θ)
     J[3, 8] = Δ
