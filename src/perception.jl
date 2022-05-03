@@ -67,6 +67,9 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
         c1_meas = meas[1]
         c2_meas = meas[2]
 
+        println(c1_meas)
+        println(c2_meas)
+
         if !first
             # initialize vector of all current tracks
             kalman_states = Vector{KalmanState}()
@@ -74,24 +77,50 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
             first = true
         end
 
-        # println(kalman_states)
+        println("before filter: ")
+        println(kalman_states)
 
         c1_meas = copy(meas[1])
         c2_meas = copy(meas[2])
 
         for state in kalman_states
+<<<<<<< Updated upstream
             c1_match = match_bb_to_track(state, c1_meas, c1)
             c2_match = match_bb_to_track(state, c2_meas, c2)
             state.meas = cat(c1_meas[c1_match][1:4], c2_meas[c2_match][1:4])
             delete!(c1_meas, c1_match)
             delete!(c2_meas, c2_match)
             kalman_filter(state, camera_array)
+=======
+            if(length(c1_meas) > 0)
+                c1_match = match_bb_to_track(state, c1_meas, c1)
+                c1_meas_tmp = c1_meas[c1_match]
+                c1_match_meas = [c1_meas_tmp.left, c1_meas_tmp.top, c1_meas_tmp.right, c1_meas_tmp.bottom]
+                delete!(c1_meas, c1_match)
+            else
+                c1_match_meas = [0 0 0 0]
+            end
+            if(length(c2_meas) > 0)
+                c2_match = match_bb_to_track(state, c2_meas, c2)
+                c2_meas_tmp = c2_meas[c2_match]
+                c2_match_meas = [c2_meas_tmp.left, c2_meas_tmp.top, c2_meas_tmp.right, c2_meas_tmp.bottom]
+                deleteat!(c2_meas, c2_match)
+            else 
+                c2_match_meas = [0 0 0 0]
+            end
+            state.meas = vcat(c1_match_meas, c2_match_meas)
+            kalman_filter(state)
+>>>>>>> Stashed changes
         end
 
         # add new tracks for leftover bounding boxes in camera1
         if length(c1_meas) != 0
             kalman_init(kalman_states, c1_meas, c1)
         end
+
+        println("after filter: ")
+        println(kalman_states)
+        println()
         
         #tracks = TracksMessage(...)
         #TODO your code here
@@ -171,11 +200,25 @@ function kalman_init(kalman_states, bb_c1, c1; loop_radius=50.0)
 end
 
 function match_bb_to_track(kalman_state, bb_list, camera)
-    kalman_bbox = h_state_to_bbox(kalman_state.x_k, camera)
+    (kalman_bbox, _, _) = h_state_to_bbox(kalman_state.x_k, camera)
     euclid_dists = []
     for (i, bb) in enumerate(bb_list)
-        push!(euclid_dists, sqrt(kalman_bbox[1]-bb_list[1])^2 + (kalman_bbox[2]-bb_list[2]^2))
+        tl_kalman = [kalman_bbox[1] kalman_bbox[2]]
+        br_kalman = [kalman_bbox[3] kalman_bbox[4]]
+        kalman_bbox_mid = midpoint(tl_kalman, br_kalman)
+        tl_bbox = [bb.left bb.top]
+        br_bbox = [bb.right bb.bottom]
+        bb_mid = midpoint(tl_bbox, br_bbox)
+        println(kalman_bbox_mid)
+        println(bb_mid)
+        println()
+
+        push!(euclid_dists, sqrt((kalman_bbox_mid[1]-bb_mid[1])^2 + (kalman_bbox_mid[2]-bb_mid[2])^2))
+        println("inside loop: ")
+        println(euclid_dists)
     end
+    println("outside loop: ")
+    println(euclid_dists)
     best_match = findmin(euclid_dists)
     return best_match[2] #index of best match bb
 end
