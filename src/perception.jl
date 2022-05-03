@@ -58,13 +58,14 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
 
     first = false
     prev_t = 0
+    cur_t = 0
     kalman_states = Vector{KalmanState}()
 
     while true
         sleep(0)
         @return_if_told(EMG)
         meas = @fetch_or_continue(SENSE)
-        if length(meas[1]) == 0 && length(meas[2]) == 0
+        if length(meas[1]) == 0 || length(meas[2]) == 0
             continue
         end
 
@@ -86,31 +87,43 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
         c1_meas = copy(meas[1])
         c2_meas = copy(meas[2])
 
+        # stores states still in fov
+        new_kalman_states = []
+
         for state in kalman_states
+
+            if infov_kalman(state, c1) || infov_kalman(state, c2)
+                continue
+            end
+
             if(length(c1_meas) > 0)
                 c1_match = match_bb_to_track(state, c1_meas, c1)
                 c1_meas_tmp = c1_meas[c1_match]
                 c1_match_meas = [c1_meas_tmp.left, c1_meas_tmp.top, c1_meas_tmp.right, c1_meas_tmp.bottom]
                 cur_t = c1_meas_tmp.time
                 deleteat!(c1_meas, c1_match)
-            else
-                c1_match_meas = [0, 0, 0, 0]
             end
+
             if(length(c2_meas) > 0)
                 c2_match = match_bb_to_track(state, c2_meas, c2)
                 c2_meas_tmp = c2_meas[c2_match]
                 c2_match_meas = [c2_meas_tmp.left, c2_meas_tmp.top, c2_meas_tmp.right, c2_meas_tmp.bottom]
                 cur_t = c2_meas_tmp.time
                 deleteat!(c2_meas, c2_match)
-            else 
-                c2_match_meas = [0, 0, 0, 0]
             end
-            state.meas = vcat(c1_match_meas, c2_match_meas)
+
+            new_state = copy(state)
+
+            new_state.meas = vcat(c1_match_meas, c2_match_meas)
             delta_t = cur_t - prev_t
-            state.timestamp = cur_t
-            kalman_filter(state, camera_array, delta_t)
+            new_state.timestamp = cur_t
+            kalman_filter(new_state, camera_array, delta_t)
             prev_t = cur_t
+
+            push!(new_kalman_states, new_state)
         end
+
+        kalman_states = new_kalman_states
 
         # add new tracks for leftover bounding boxes in camera1
         if length(c1_meas) != 0
@@ -246,4 +259,17 @@ end
 # returns the center between 2 points
 function midpoint(p1, p2)
     return [(p1[1]+p2[1])/2 (p1[2]+p2[2])/2]
+end
+
+# return whether a kalman state is in frame of view
+function infov_kalman(state, camera)
+    println(state)
+    pt = [state.x_k[1] state.x_k[2] state.x_k[6]/2]
+    x = -1.0 ≤ camera.focal_len * pt[1] / (pt[3]*camera.sx) ≤ 1.0
+    y = -1.0 ≤ camera.focal_len * pt[2] / (pt[3]*camera.sy) ≤ 1.0
+    z = pt[3] > 0 
+    if x && y && z
+        return true
+    end
+    return false
 end
