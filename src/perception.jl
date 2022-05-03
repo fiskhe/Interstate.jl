@@ -25,6 +25,7 @@ mutable struct KalmanState
     P_k::Matrix{Float64}
     meas::Vector{Float64}
     timestamp::Float64
+    tracknum::Int64
 end
 
 function position(o::ObjectState)
@@ -48,6 +49,7 @@ struct TracksMessage
     tracks::Dict{Int, ObjectState}
 end
 
+NUM_TRACKS = 1
 
 function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_array, road)
     lines = []
@@ -60,6 +62,7 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     prev_t = 0
     cur_t = 0
     kalman_states = Vector{KalmanState}()
+    global NUM_TRACKS = 1
 
     while true
         sleep(0)
@@ -91,8 +94,7 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
         new_kalman_states = []
 
         for state in kalman_states
-
-            if infov_kalman(state, c1) || infov_kalman(state, c2)
+            if !(infov_kalman(state, c1) || infov_kalman(state, c2))
                 continue
             end
 
@@ -102,6 +104,8 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
                 c1_match_meas = [c1_meas_tmp.left, c1_meas_tmp.top, c1_meas_tmp.right, c1_meas_tmp.bottom]
                 cur_t = c1_meas_tmp.time
                 deleteat!(c1_meas, c1_match)
+            else
+                break
             end
 
             if(length(c2_meas) > 0)
@@ -110,17 +114,22 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
                 c2_match_meas = [c2_meas_tmp.left, c2_meas_tmp.top, c2_meas_tmp.right, c2_meas_tmp.bottom]
                 cur_t = c2_meas_tmp.time
                 deleteat!(c2_meas, c2_match)
+            else
+                break
             end
 
-            new_state = copy(state)
+            # new_state = copy(state)
 
-            new_state.meas = vcat(c1_match_meas, c2_match_meas)
+            state.meas = vcat(c1_match_meas, c2_match_meas)
+            # new_state.meas = vcat(c1_match_meas, c2_match_meas)
             delta_t = cur_t - prev_t
-            new_state.timestamp = cur_t
-            kalman_filter(new_state, camera_array, delta_t)
+            state.timestamp = cur_t
+            # new_state.timestamp = cur_t
+            kalman_filter(state, camera_array, delta_t)
+            # kalman_filter(new_state, camera_array, delta_t)
             prev_t = cur_t
 
-            push!(new_kalman_states, new_state)
+            push!(new_kalman_states, state)
         end
 
         kalman_states = new_kalman_states
@@ -132,11 +141,29 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
 
         # println("after filter: ")
         # println(kalman_states)
+
         # println()
+        # println("number of kalman states: ", length(kalman_states))
+        # println("NUM_TRACKS: ", NUM_TRACKS)
         
         #tracks = TracksMessage(...)
         #TODO your code here
         #@replace(TRACKS, tracks)    
+        tracks = Dict{Int, ObjectState}()
+        for (i, state) in enumerate(kalman_states)
+            (x, y, θ, l, w, h) = state.x_k[1:6]
+            tracks[i] = ObjectState(x, y, θ, l, w, h)
+            # println(tracks)
+        end
+        tracks_message = TracksMessage(cur_t, tracks)
+        @replace(TRACKS, tracks_message)
+        # @replace(TRACKS, TracksMessage(cur_t, tracks))
+        # println(tracks_message)
+        # println(tracks_message.tracks)
+        track_message = TracksMessage(0.0, Dict{Int, ObjectState}())
+        trraacks = @fetch_or_default(TRACKS, track_message)
+        # println(trraacks)
+        # println(trraacks.tracks)
     end
 end
 
@@ -201,7 +228,8 @@ function kalman_init(kalman_states, bb_c1, c1; loop_radius=50.0)
         variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
         P_0 = diagm(variances)
 
-        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom], bbox.time)
+        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom], bbox.time, NUM_TRACKS)
+        global NUM_TRACKS += 1
         push!(kalman_states, curr_state)
     end
 end

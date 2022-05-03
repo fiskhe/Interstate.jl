@@ -155,10 +155,8 @@ function h_jacobian_deconstr(bbox_i, points, camera, full_state)
             dtrans_dx = [1, 0, 0]
             dtrans_dy = [0, 1, 0]
             dtrans_dth = [-l*sin(th)/2-w*cos(th)/2, l*cos(th)/2-w*sin(th)/2, 0]
-            dtrans_dl = [-cos(th)/2, -sin(th)/2, 0]
-            # dtrans_dl = [cos(th)/2, sin(th)/2, 0]
-            dtrans_dw = [sin(th)/2, -cos(th)/2, 0]
-            # dtrans_dw = [-sin(th)/2, cos(th)/2, 0]
+            dtrans_dl = [lwh_c[1]*cos(th)/2, lwh_c[1]*sin(th)/2, 0]
+            dtrans_dw = [lwh_c[2] * -sin(th)/2, lwh_c[2] * cos(th)/2, 0]
             dtrans_dh = [0, 0, 1]
             if h == 0
                 dtrans_dh[3] = 0
