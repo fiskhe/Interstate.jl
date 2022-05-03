@@ -59,50 +59,54 @@ function simulate(sim::Simulator, emg, channel;
     println("Simulating on thread ", Threads.threadid())
     iters = 0
     #try
-        while true
+    while true
             sleep(0)
             @return_if_told(emg)
             simulated_time += Δ
             display_time += Δ
             iters += 1
 
-            for (id, movable) ∈ sim.movables
-                update_command!(movable)
-                update_state!(movable, Δ)
-            end
-           
-            @replace(channel, (simulated_time, sim.movables))
+        for (id, movable) ∈ sim.movables
+            update_command!(movable)
+            update_state!(movable, Δ)
+        end
 
-            if check_collision && collision(sim.movables)
-                println()
-                println("Collision!")
-                @replace(emg, 1)
-                return
-            end
+        out_data = Dict{Int, Movable}()
+        for (id, movable) ∈ sim.movables
+            out_data[id] = Movable(movable)
+        end
+        @replace(channel, (simulated_time, out_data))
 
-            if length(check_road_violation) > 0
-                for id ∈ check_road_violation
-                    if road_violation(sim.movables[id], sim.road)
-                        println()
-                        println("Road boundary violation!")
-                        @replace(emg, 1)
-                        return
-                    end
+        if check_collision && collision(sim.movables)
+            println()
+            println("Collision!")
+            @replace(emg, 1)
+            return
+        end
+
+        if length(check_road_violation) > 0
+            for id ∈ check_road_violation
+                if road_violation(sim.movables[id], sim.road)
+                    println()
+                    println("Road boundary violation!")
+                    @replace(emg, 1)
+                    return
                 end
             end
 
 
-            if display_time > print_increment
-                if disp
-                    # print("\e[2K")
-                    # print("\e[1G")
-                    # @printf("Loop time: %f.", simulated_time / iters)
-                end
-                display_time -= print_increment
+        if display_time > print_increment
+            if disp
+                # print("\e[2K")
+                # print("\e[1G")
+                # @printf("Loop time: %f.", simulated_time / iters)
             end
             err = (time_ns()-t0)/1e9 - simulated_time
             Δ = max(0.0, min(5e-1, err))
         end
+        err = (time_ns()-t0)/1e9 - simulated_time
+        Δ = max(0.0, min(5e-1, err))
+    end
     #catch e #    if e isa InterruptException
     #        println(e)
     #        println()
