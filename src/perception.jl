@@ -80,9 +80,9 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
             continue
         end
 
-        println("before filter: ")
-        println(kalman_states)
-        println()
+        # println("before filter: ")
+        # println(kalman_states)
+        # println()
 
         c1_meas = copy(meas[1])
         c2_meas = copy(meas[2])
@@ -130,9 +130,9 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
             kalman_init(kalman_states, c1_meas, c1)
         end
 
-        println("after filter: ")
-        println(kalman_states)
-        println()
+        # println("after filter: ")
+        # println(kalman_states)
+        # println()
         
         #tracks = TracksMessage(...)
         #TODO your code here
@@ -263,7 +263,6 @@ end
 
 # return whether a kalman state is in frame of view
 function infov_kalman(state, camera)
-    println(state)
     pt = [state.x_k[1] state.x_k[2] state.x_k[6]/2]
     x = -1.0 ≤ camera.focal_len * pt[1] / (pt[3]*camera.sx) ≤ 1.0
     y = -1.0 ≤ camera.focal_len * pt[2] / (pt[3]*camera.sy) ≤ 1.0

@@ -93,6 +93,7 @@ function simulate(sim::Simulator, emg, channel;
                     return
                 end
             end
+        end
 
 
         if display_time > print_increment
