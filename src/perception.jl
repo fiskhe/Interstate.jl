@@ -20,10 +20,11 @@ struct ExtendedObjectState
     ang_velocity::Float64
 end
 
-struct KalmanState
+mutable struct KalmanState
     x_k::Vector{Float64}
     P_k::Matrix{Float64}
     meas::Vector{Float64}
+    timestamp::Float64
 end
 
 function position(o::ObjectState)
@@ -47,6 +48,7 @@ struct TracksMessage
     tracks::Dict{Int, ObjectState}
 end
 
+
 function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_array, road)
     lines = []
 
@@ -55,6 +57,9 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     c2 = camera_array[2]
 
     first = false
+    prev_t = 0
+    kalman_states = Vector{KalmanState}()
+
     while true
         sleep(0)
         @return_if_told(EMG)
@@ -63,54 +68,48 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
             continue
         end
 
-        println(meas)
         c1_meas = meas[1]
         c2_meas = meas[2]
 
-        println(c1_meas)
-        println(c2_meas)
-
         if !first
             # initialize vector of all current tracks
-            kalman_states = Vector{KalmanState}()
             kalman_init(kalman_states, c1_meas, c1)
+            prev_t = kalman_states[1].timestamp
             first = true
+            continue
         end
 
         println("before filter: ")
         println(kalman_states)
+        println()
 
         c1_meas = copy(meas[1])
         c2_meas = copy(meas[2])
 
         for state in kalman_states
-<<<<<<< Updated upstream
-            c1_match = match_bb_to_track(state, c1_meas, c1)
-            c2_match = match_bb_to_track(state, c2_meas, c2)
-            state.meas = cat(c1_meas[c1_match][1:4], c2_meas[c2_match][1:4])
-            delete!(c1_meas, c1_match)
-            delete!(c2_meas, c2_match)
-            kalman_filter(state, camera_array)
-=======
             if(length(c1_meas) > 0)
                 c1_match = match_bb_to_track(state, c1_meas, c1)
                 c1_meas_tmp = c1_meas[c1_match]
                 c1_match_meas = [c1_meas_tmp.left, c1_meas_tmp.top, c1_meas_tmp.right, c1_meas_tmp.bottom]
-                delete!(c1_meas, c1_match)
+                cur_t = c1_meas_tmp.time
+                deleteat!(c1_meas, c1_match)
             else
-                c1_match_meas = [0 0 0 0]
+                c1_match_meas = [0, 0, 0, 0]
             end
             if(length(c2_meas) > 0)
                 c2_match = match_bb_to_track(state, c2_meas, c2)
                 c2_meas_tmp = c2_meas[c2_match]
                 c2_match_meas = [c2_meas_tmp.left, c2_meas_tmp.top, c2_meas_tmp.right, c2_meas_tmp.bottom]
+                cur_t = c2_meas_tmp.time
                 deleteat!(c2_meas, c2_match)
             else 
-                c2_match_meas = [0 0 0 0]
+                c2_match_meas = [0, 0, 0, 0]
             end
             state.meas = vcat(c1_match_meas, c2_match_meas)
-            kalman_filter(state)
->>>>>>> Stashed changes
+            delta_t = cur_t - prev_t
+            state.timestamp = cur_t
+            kalman_filter(state, camera_array, delta_t)
+            prev_t = cur_t
         end
 
         # add new tracks for leftover bounding boxes in camera1
@@ -128,31 +127,29 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     end
 end
 
-function kalman_filter(prev_kalman_state, cams)
+function kalman_filter(prev_kalman_state, cams, delta_t)
    
     x_prev = prev_kalman_state.x_k
     P_prev = prev_kalman_state.P_k
 
     x_k_forecast = obj_state_forecast(x_prev, 0.1) # 0.1 time step for now
 
-    (c1, c2) = cams
+    c1 = cams[1]
+    c2 = cams[2]
     (bb1, bbox_i1, points1) = h_state_to_bbox(x_k_forecast, c1)
     (bb2, bbox_i2, points2) = h_state_to_bbox(x_k_forecast, c2)
-    bb_forecast = vcat(bb1, bb2)
+    bb_forecast = vcat(bb1', bb2')
 
-    J_h1= h_jacobian_deconstr(bbox_i1, points1, c1, full_state)
-    J_h2= h_jacobian_deconstr(bbox_i2, points2, c2, full_state)
+    J_h1= h_jacobian_deconstr(bbox_i1, points1, c1, x_prev)
+    J_h2= h_jacobian_deconstr(bbox_i2, points2, c2, x_prev)
     J_h = vcat(J_h1, J_h2)
 
-    P_k_forecast = p_forecast(x_prev, P_prev)
-    Kalman = kalman_gain(P_k_forecast, x_k_forecast, J_h)
-    P_k = p_k(Kalman, x_k_forecast, P_k_forecast, J_h)
+    P_k_forecast = p_forecast(x_prev, P_prev, delta_t)
+    kalman = kalman_gain(P_k_forecast, x_k_forecast, J_h)
+    P_k = p_k(kalman, x_k_forecast, P_k_forecast, J_h)
     x_k = obj_state_next(x_k_forecast, kalman, prev_kalman_state.meas, bb_forecast)
 
-    # TODO: get the time step right
-
-    # TODO: check if this actually works!!!!!
-    prev_kalman_state.x_k = x_k
+    prev_kalman_state.x_k = vec(x_k)
     prev_kalman_state.P_k = P_k
 
 end
@@ -188,15 +185,12 @@ function kalman_init(kalman_states, bb_c1, c1; loop_radius=50.0)
         θ = rand() * 2.0 * pi - pi
         angular_vel = v / loop_radius
         x_0 = [x, y, θ, l, w, h, v, angular_vel]
-        # x_0 = ExtendedObjectState(x, y, θ, l, w, h, v, angular_vel)
         variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
         P_0 = diagm(variances)
 
-        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom])
+        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom], bbox.time)
         push!(kalman_states, curr_state)
     end
-
-    #kalman_states
 end
 
 function match_bb_to_track(kalman_state, bb_list, camera)
@@ -209,16 +203,8 @@ function match_bb_to_track(kalman_state, bb_list, camera)
         tl_bbox = [bb.left bb.top]
         br_bbox = [bb.right bb.bottom]
         bb_mid = midpoint(tl_bbox, br_bbox)
-        println(kalman_bbox_mid)
-        println(bb_mid)
-        println()
-
         push!(euclid_dists, sqrt((kalman_bbox_mid[1]-bb_mid[1])^2 + (kalman_bbox_mid[2]-bb_mid[2])^2))
-        println("inside loop: ")
-        println(euclid_dists)
     end
-    println("outside loop: ")
-    println(euclid_dists)
     best_match = findmin(euclid_dists)
     return best_match[2] #index of best match bb
 end
