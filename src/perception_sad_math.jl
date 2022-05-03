@@ -173,7 +173,6 @@ function h_jacobian_deconstr(bbox_i, points, camera, full_state)
 end
 
 function obj_state_next(x_k_forecast, kalman_gain, cam_meas, bb_forecast)
-    (c1, c2) = cams
     # x_k_forecast + kalman_gain * (cam_meas - h(x_k_forecast))
     x_k_forecast + kalman_gain * (cam_meas - bb_forecast)
 end
