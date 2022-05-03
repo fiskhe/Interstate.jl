@@ -64,27 +64,31 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
         end
 
         println(meas)
+        c1_meas = meas[1]
+        c2_meas = meas[2]
 
         if !first
-            kalman_states = kalman_init(meas[1], c1)
+            # initialize vector of all current tracks
+            kalman_states = Vector{KalmanState}()
+            kalman_init(kalman_states, c1_meas, c1)
             first = true
         end
 
         # println(kalman_states)
 
-        c1_meas = meas[1]
-        c2_meas = meas[2]
-
         for state in kalman_states
-            c1_match = match_bb_to_track(state, c1_meas, camera_array[1])
-            c2_match = match_bb_to_track(state, c2_meas, camera_array[2])
+            c1_match = match_bb_to_track(state, c1_meas, c1)
+            c2_match = match_bb_to_track(state, c2_meas, c2)
             state.meas = cat(c1_meas[c1_match][1:4], c2_meas[c2_match][1:4])
             delete!(c1_meas, c1_match)
             delete!(c2_meas, c2_match)
             kalman_filter(state)
         end
 
-        #TODO: create funct to add one kalman state
+        # add new tracks for leftover bounding boxes in camera1
+        if length(c1_meas) != 0
+            kalman_init(kalman_states, c1_meas, c1)
+        end
         
         #tracks = TracksMessage(...)
         #TODO your code here
@@ -110,7 +114,7 @@ function kalman_filter(prev_kalman_state)
 end
 
 # initialize values for first iteration of Kalman filter with camera1
-function kalman_init(bb_c1, c1; loop_radius=50.0)
+function kalman_init(kalman_states, bb_c1, c1; loop_radius=50.0)
     # c1=camera_array[1]
     f = c1.focal_len
     R = c1.R
@@ -119,9 +123,6 @@ function kalman_init(bb_c1, c1; loop_radius=50.0)
     sy = c1.sy
     camera_pos = SVector{3,Float64}(5.0/6*loop_radius, loop_radius, 20.0)
     lookat = SVector{3,Float64}(0, 0, 0)
-
-    # initialize vector of all current tracks
-    kalman_states = Vector{KalmanState}()
 
     for (i, bbox) in enumerate(bb_c1)
         tl = [bbox.left bbox.top]
@@ -151,7 +152,7 @@ function kalman_init(bb_c1, c1; loop_radius=50.0)
         push!(kalman_states, curr_state)
     end
 
-    kalman_states
+    #kalman_states
 end
 
 function match_bb_to_track(kalman_state, bb_list, camera)
@@ -163,6 +164,7 @@ function match_bb_to_track(kalman_state, bb_list, camera)
     best_match = findmin(euclid_dists)
     return best_match[2] #index of best match bb
 end
+
 
 # converts bounding boxes from camera frame to global frame 2d pixels (assumes f=1)
 function camera_to_global(camera, bb_cf)
