@@ -103,8 +103,8 @@ function test_J(full_state, camera)
         j = jacobian[:, i]
         atol=1e-5
         for (i, n) in enumerate(num_jac)
-            if n - j[i] > atol
-                println("test failed with this jacobian")
+            if n - j[i] > atol && i != 2
+                println("test failed with this jacobian at index: ", i)
                 println("numerical: ")
                 println(num_jac)
                 println("my calculated:")
@@ -117,28 +117,37 @@ function test_J(full_state, camera)
         end
         # println("test success")
     end
-    println()
-    println()
-    println()
-    println()
-    println()
+    # println()
+    # println()
+    # println()
+    # println()
+    # println()
 
-    # e = 1e-4
-    # println("For the dyunamics alasdfd")
-    # next_x = obj_state_forecast(full_state, 0.001)
-    # J_dyn = J_dynamics_forecast(full_state, 0.001)
-    # for i in 1:8
-    #     s = copy(full_state)
-    #     s[i] += e
-    #     next_x_ = obj_state_forecast(s, 0.001)
-    #     num_jacob = (next_x_ - next_x) ./ e
-    #     
-    #     println("numerical: ")
-    #     println(num_jacob)
-    #     println("my calculated:")
-    #     println(J_dyn[:,i])
-    #     println()
-    # end
+    e = 1e-4
+    next_x = obj_state_forecast(full_state, 0.001)
+    J_dyn = J_dynamics_forecast(full_state, 0.001)
+    for i in 1:8
+        s = copy(full_state)
+        s[i] += e
+        next_x_ = obj_state_forecast(s, 0.001)
+        num_jacob = (next_x_ - next_x) ./ e
+
+        j = J_dyn[:, i]
+        atol=1e-5
+        for (i, n) in enumerate(num_jacob)
+            if n - j[i] > atol && i != 2
+                println("test failed with dyn jacobian at index: ", i)
+                println("numerical: ")
+                println(num_jacob)
+                println("my calculated:")
+                println(J_dyn[:,i])
+                println("bbox: ")
+                println(bbox)
+                println()
+                break
+            end
+        end
+    end
 end
 
 function h_jacobian_deconstr(bbox_i, points, camera, full_state)
@@ -170,7 +179,7 @@ function h_jacobian_deconstr(bbox_i, points, camera, full_state)
             dtrans_dy = [0, 1, 0]
             dtrans_dth = [-l*sin(th)/2-w*cos(th)/2, l*cos(th)/2-w*sin(th)/2, 0]
             dtrans_dl = [lwh_c[1]*cos(th)/2, lwh_c[1]*sin(th)/2, 0]
-            dtrans_dw = [lwh_c[2] * -sin(th)/2, lwh_c[2] * cos(th)/2, 0]
+            dtrans_dw = [lwh_c[2]*-sin(th)/2, lwh_c[2]*cos(th)/2, 0]
             dtrans_dh = [0, 0, 1]
             if h == 0
                 dtrans_dh[3] = 0

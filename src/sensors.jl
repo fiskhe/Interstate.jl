@@ -188,8 +188,6 @@ function get_camera_meas(sensor, gt, ms, road)
     for (id, m) ∈ ms
         pts = get_corners(m)
         transform!(sensor, pts...)
-        # bbox = expected_bbox(sensor, pts, gt)
-        # println(bbox)
         if infov(pts, sensor)
             bbox = expected_bbox(sensor, pts, gt)
             push!(meas, bbox)
@@ -198,13 +196,10 @@ function get_camera_meas(sensor, gt, ms, road)
             state = m.state
             con = m.control
             h_state = [state[1], state[2], state[4], m.length, m.width, m.height, state[3], con[2]]
-            # println(h_state[1:3])
             # (m_test, points) = h_state_to_bbox(h_state, sensor)
             # push!(meas_test, m_test)
-            # println(bbox)
-            # println()
             # kalman_init([bbox], sensor)
-            test_J(h_state, sensor)
+            # test_J(h_state, sensor)
             # my additions end
         end
     end

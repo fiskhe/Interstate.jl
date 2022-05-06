@@ -25,7 +25,6 @@ mutable struct KalmanState
     P_k::Matrix{Float64}
     meas::Vector{Float64}
     timestamp::Float64
-    tracknum::Int64
 end
 
 function position(o::ObjectState)
@@ -49,8 +48,6 @@ struct TracksMessage
     tracks::Dict{Int, ObjectState}
 end
 
-# TODO: get rid of numtracks idt we need it
-
 function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_array, road)
     lines = []
 
@@ -62,8 +59,6 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     prev_t = 0
     cur_t = 0
     kalman_states = Vector{KalmanState}()
-    variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
-    P_0 = diagm(variances)
 
     while true
         sleep(0)
@@ -91,6 +86,7 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
         new_kalman_states = []
 
         for state in kalman_states
+            # skip if state not in either camera view
             if !(infov_kalman(state, c1) && infov_kalman(state, c2))
                 continue
             end
@@ -170,7 +166,6 @@ end
 
 # initialize values for first iteration of Kalman filter with camera1
 function kalman_init(kalman_states, bb_c1, c1; loop_radius=50.0)
-    # c1=camera_array[1]
     f = c1.focal_len
     R = c1.R
     t = c1.t
@@ -192,27 +187,18 @@ function kalman_init(kalman_states, bb_c1, c1; loop_radius=50.0)
         x = center_gf[1]
         y = center_gf[2]
         θ = -0.4
-        # θ = rand() * 2.0 * pi - pi
         extra_size = rand()
         l = 3.0 + 6.0 * extra_size
         w = 1.5 + 2.0 * extra_size
         h = 2.0 + 1.0 * extra_size
-        # l = 3.0
-        # w = 1.5
-        # h = 2.0 
         v = 5.0 + rand()*5.0
         angular_vel = v / loop_radius
         x_0 = [x, y, θ, l, w, h, v, angular_vel]
 
-        # variances = ones(8) * 0.001
-        # variances = [25/2, 25/2, pi, 36/2, 4, 1, 25/2, 0.01] # all overestimations
-        variances = [25/2, 25/2, pi/2, 9/2, 4/2, 0.5/2, 25, 0.01] # all overestimations
-        # variances = [25, 25, pi, 36, 4, 1, 25, 0.01] # all overestimations
-        # variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
+        variances = [25/2, 25/2, 0.1, 9, 1, 0.25, 6.25, 0.01]
         P_0 = diagm(variances)
 
-        #TODO: get riddddd 1
-        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom], bbox.time, 1)
+        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom], bbox.time)
         push!(kalman_states, curr_state)
     end
 end
@@ -221,13 +207,8 @@ function match_bb_to_track(kalman_state, bb_list, camera)
     (kalman_bbox, _, _) = h_state_to_bbox(kalman_state.x_k, camera)
     euclid_dists = []
     for (i, bb) in enumerate(bb_list)
-        tl_kalman = [kalman_bbox[1] kalman_bbox[2]]
-        br_kalman = [kalman_bbox[3] kalman_bbox[4]]
-        kalman_bbox_mid = midpoint(tl_kalman, br_kalman)
-        tl_bbox = [bb.left bb.top]
-        br_bbox = [bb.right bb.bottom]
-        bb_mid = midpoint(tl_bbox, br_bbox)
-        push!(euclid_dists, sqrt((kalman_bbox_mid[1]-bb_mid[1])^2 + (kalman_bbox_mid[2]-bb_mid[2])^2))
+        bbox = [bb.left, bb.top, bb.right, bb.bottom]
+        push!(euclid_dists, euclidean_dist(kalman_bbox, bbox))
     end
     best_match = findmin(euclid_dists)
     return best_match[2] #index of best match bb
@@ -264,7 +245,7 @@ end
 
 # returns the square of euclidean distance between 2 points
 function euclidean_dist(p1, p2)
-    return sqrt((p1[1]-p2[1])^2 + (p1[2]-p2[2])^2 + (p1[3]-p2[3])^2)
+    sqrt(sum((p1.-p2).^2))
 end
 
 # returns the center between 2 points
