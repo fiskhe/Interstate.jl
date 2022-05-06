@@ -1,5 +1,9 @@
 using LinearAlgebra # for the I
 
+function glob_to_cam(pos, camera)
+    camera.R * pos + camera.t
+end
+
 function h_state_to_bbox(full_state, camera)
     # full_state = [x y theta l w h v \omega]
     # in sensors.jl:
@@ -88,8 +92,6 @@ function test_J(full_state, camera)
     jacobian = h_jacobian_deconstr(bbox_i, points, camera, full_state)
 
     d = 1e-4
-    println("bbox: ")
-    println(bbox)
 
     for i in 1:8
         s = copy(full_state)
@@ -97,11 +99,23 @@ function test_J(full_state, camera)
         (bbox_, _, _) = h_state_to_bbox(s, camera)
         num_jac = (bbox_ - bbox)./d
         
-        println("numerical: ")
-        println(num_jac)
-        println("my calculated:")
-        println(jacobian[:,i])
-        println()
+        # if sum(abs(num_jac ./ jacobian)) - sum(ones(4)*0.00001)
+        j = jacobian[:, i]
+        atol=1e-5
+        for (i, n) in enumerate(num_jac)
+            if n - j[i] > atol
+                println("test failed with this jacobian")
+                println("numerical: ")
+                println(num_jac)
+                println("my calculated:")
+                println(jacobian[:,i])
+                println("bbox: ")
+                println(bbox)
+                println()
+                break
+            end
+        end
+        # println("test success")
     end
     println()
     println()
@@ -109,22 +123,22 @@ function test_J(full_state, camera)
     println()
     println()
 
-    e = 1e-4
-    println("For the dyunamics alasdfd")
-    next_x = obj_state_forecast(full_state, 0.001)
-    J_dyn = J_dynamics_forecast(full_state, 0.001)
-    for i in 1:8
-        s = copy(full_state)
-        s[i] += e
-        next_x_ = obj_state_forecast(s, 0.001)
-        num_jacob = (next_x_ - next_x) ./ e
-        
-        println("numerical: ")
-        println(num_jacob)
-        println("my calculated:")
-        println(J_dyn[:,i])
-        println()
-    end
+    # e = 1e-4
+    # println("For the dyunamics alasdfd")
+    # next_x = obj_state_forecast(full_state, 0.001)
+    # J_dyn = J_dynamics_forecast(full_state, 0.001)
+    # for i in 1:8
+    #     s = copy(full_state)
+    #     s[i] += e
+    #     next_x_ = obj_state_forecast(s, 0.001)
+    #     num_jacob = (next_x_ - next_x) ./ e
+    #     
+    #     println("numerical: ")
+    #     println(num_jacob)
+    #     println("my calculated:")
+    #     println(J_dyn[:,i])
+    #     println()
+    # end
 end
 
 function h_jacobian_deconstr(bbox_i, points, camera, full_state)
@@ -200,8 +214,8 @@ end
 
 function kalman_gain(P_k_forecast, x_k_forecast, J_h)
     # p_forecast * J_h(x_k_forecast).T * (J_h(x_k_forecast) * P_f * J_h(x_k_forecast).T + noise_R)^-1
-    # p_forecast(prev_state) * J_h' * (J_h * P_f * J_h' + noise_R)^-1
-    noise = [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001,]
+    noise = ones(8) * 0.0001
+    # noise = randn(8) * 0.0001
     noise_R = diagm(noise)
     P_k_forecast * J_h' * (J_h * P_k_forecast * J_h' + noise_R)^-1
 end
@@ -217,6 +231,5 @@ function p_forecast(prev_state, p_prev, Δ)
     J_prev = J_dynamics_forecast(prev_state, Δ)
     noise_Q = diagm(randn(8))
     J_prev * p_prev * J_prev' + noise_Q
-    # J_prev * p_prev * J_prev'
 end
 

@@ -49,7 +49,7 @@ struct TracksMessage
     tracks::Dict{Int, ObjectState}
 end
 
-NUM_TRACKS = 1
+# TODO: get rid of numtracks idt we need it
 
 function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_array, road)
     lines = []
@@ -62,7 +62,8 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
     prev_t = 0
     cur_t = 0
     kalman_states = Vector{KalmanState}()
-    global NUM_TRACKS = 1
+    variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
+    P_0 = diagm(variances)
 
     while true
         sleep(0)
@@ -83,10 +84,6 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
             continue
         end
 
-        # println("before filter: ")
-        # println(kalman_states)
-        # println()
-
         c1_meas = copy(meas[1])
         c2_meas = copy(meas[2])
 
@@ -94,7 +91,7 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
         new_kalman_states = []
 
         for state in kalman_states
-            if !(infov_kalman(state, c1) || infov_kalman(state, c2))
+            if !(infov_kalman(state, c1) && infov_kalman(state, c2))
                 continue
             end
 
@@ -118,15 +115,12 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
                 break
             end
 
-            # new_state = copy(state)
-
             state.meas = vcat(c1_match_meas, c2_match_meas)
-            # new_state.meas = vcat(c1_match_meas, c2_match_meas)
             delta_t = cur_t - prev_t
             state.timestamp = cur_t
-            # new_state.timestamp = cur_t
+
             kalman_filter(state, camera_array, delta_t)
-            # kalman_filter(new_state, camera_array, delta_t)
+
             prev_t = cur_t
 
             push!(new_kalman_states, state)
@@ -139,36 +133,17 @@ function object_tracker(SENSE::Channel, TRACKS::Channel, EMG::Channel, camera_ar
             kalman_init(kalman_states, c1_meas, c1)
         end
 
-        # println("after filter: ")
-        # println(kalman_states)
-
-        # println()
-        # println("number of kalman states: ", length(kalman_states))
-        # println("NUM_TRACKS: ", NUM_TRACKS)
-        
-        #tracks = TracksMessage(...)
-        #TODO your code here
-        #@replace(TRACKS, tracks)    
         tracks = Dict{Int, ObjectState}()
         for (i, state) in enumerate(kalman_states)
             (x, y, θ, l, w, h) = state.x_k[1:6]
             tracks[i] = ObjectState(x, y, θ, l, w, h)
-            # println(tracks)
         end
         tracks_message = TracksMessage(cur_t, tracks)
         @replace(TRACKS, tracks_message)
-        # @replace(TRACKS, TracksMessage(cur_t, tracks))
-        # println(tracks_message)
-        # println(tracks_message.tracks)
-        track_message = TracksMessage(0.0, Dict{Int, ObjectState}())
-        trraacks = @fetch_or_default(TRACKS, track_message)
-        # println(trraacks)
-        # println(trraacks.tracks)
     end
 end
 
 function kalman_filter(prev_kalman_state, cams, delta_t)
-   
     x_prev = prev_kalman_state.x_k
     P_prev = prev_kalman_state.P_k
 
@@ -191,7 +166,6 @@ function kalman_filter(prev_kalman_state, cams, delta_t)
 
     prev_kalman_state.x_k = vec(x_k)
     prev_kalman_state.P_k = P_k
-
 end
 
 # initialize values for first iteration of Kalman filter with camera1
@@ -217,19 +191,28 @@ function kalman_init(kalman_states, bb_c1, c1; loop_radius=50.0)
         center_gf = inv(R)*(center_cf - t)
         x = center_gf[1]
         y = center_gf[2]
+        θ = -0.4
+        # θ = rand() * 2.0 * pi - pi
         extra_size = rand()
-        w = 1.5 + 2.0 * extra_size
         l = 3.0 + 6.0 * extra_size
+        w = 1.5 + 2.0 * extra_size
         h = 2.0 + 1.0 * extra_size
+        # l = 3.0
+        # w = 1.5
+        # h = 2.0 
         v = 5.0 + rand()*5.0
-        θ = rand() * 2.0 * pi - pi
         angular_vel = v / loop_radius
         x_0 = [x, y, θ, l, w, h, v, angular_vel]
-        variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
+
+        # variances = ones(8) * 0.001
+        # variances = [25/2, 25/2, pi, 36/2, 4, 1, 25/2, 0.01] # all overestimations
+        variances = [25/2, 25/2, pi/2, 9/2, 4/2, 0.5/2, 25, 0.01] # all overestimations
+        # variances = [25, 25, pi, 36, 4, 1, 25, 0.01] # all overestimations
+        # variances = [25, 25, 25, 25, 4, 1, 25, 0.04] # all overestimations
         P_0 = diagm(variances)
 
-        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom], bbox.time, NUM_TRACKS)
-        global NUM_TRACKS += 1
+        #TODO: get riddddd 1
+        curr_state = KalmanState(x_0, P_0, [bbox.left, bbox.top, bbox.right, bbox.bottom], bbox.time, 1)
         push!(kalman_states, curr_state)
     end
 end
@@ -291,7 +274,8 @@ end
 
 # return whether a kalman state is in frame of view
 function infov_kalman(state, camera)
-    pt = [state.x_k[1] state.x_k[2] state.x_k[6]/2]
+    pos = [state.x_k[1], state.x_k[2], state.x_k[6]/2]
+    pt = glob_to_cam(pos, camera)
     x = -1.0 ≤ camera.focal_len * pt[1] / (pt[3]*camera.sx) ≤ 1.0
     y = -1.0 ≤ camera.focal_len * pt[2] / (pt[3]*camera.sy) ≤ 1.0
     z = pt[3] > 0 

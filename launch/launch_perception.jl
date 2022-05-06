@@ -107,8 +107,8 @@ function launch_perception(; num_agents=10, num_viewable=50, tracks_to_view = 15
         @spawn simulate(sim, EMG, SIM_ALL; disp=true, check_collision=false)
         @spawn sense(SIM_ALL, EMG, sensors, road)
         @spawn keyboard_broadcaster(KEY, EMG)
-        # @async eval_perception(SIM_ALL, TRACKS, EMG, camera_array, road; disp=false)
-        @async eval_perception(SIM_ALL, TRACKS, EMG, camera_array, road; disp=true)
+        @async eval_perception(SIM_ALL, TRACKS, EMG, camera_array, road; disp=false)
+        # @async eval_perception(SIM_ALL, TRACKS, EMG, camera_array, road; disp=true)
     end
     #GLMakie.destroy!(GLMakie.global_gl_screen())
     nothing
